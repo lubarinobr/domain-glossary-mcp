@@ -1,0 +1,10 @@
+node_modules/
+dist/
+
+# SQLite artifacts. The glossary database never belongs to this repo.
+*.db
+*.db-wal
+*.db-shm
+
+.DS_Store
+*.log
