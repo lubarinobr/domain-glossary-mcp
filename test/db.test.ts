@@ -4,7 +4,14 @@ import { mkdtempSync, rmSync, existsSync, chmodSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import envPaths from "env-paths";
-import { resolveDbPath, openDatabase, describeDbPathSource } from "../src/db.js";
+import {
+  resolveDbPath,
+  openDatabase,
+  describeDbPathSource,
+  resolveStaleAfterDays,
+  describeStaleAfterDaysSource,
+  DEFAULT_STALE_AFTER_DAYS,
+} from "../src/db.js";
 
 let workDir: string;
 
@@ -241,4 +248,53 @@ test("describeDbPathSource names the origin of the path", () => {
     "environment",
   );
   assert.equal(describeDbPathSource({}, []), "default");
+});
+
+test("resolveStaleAfterDays falls back to the default", () => {
+  assert.equal(resolveStaleAfterDays({}, []), DEFAULT_STALE_AFTER_DAYS);
+});
+
+test("resolveStaleAfterDays reads GLOSSARY_STALE_DAYS", () => {
+  assert.equal(resolveStaleAfterDays({ GLOSSARY_STALE_DAYS: "90" }, []), 90);
+});
+
+test("resolveStaleAfterDays prefers the --stale-days argument over the environment", () => {
+  assert.equal(
+    resolveStaleAfterDays({ GLOSSARY_STALE_DAYS: "90" }, ["--stale-days", "30"]),
+    30,
+  );
+});
+
+test("resolveStaleAfterDays accepts --stale-days=<n> in one token", () => {
+  assert.equal(resolveStaleAfterDays({}, ["--stale-days=45"]), 45);
+});
+
+test("resolveStaleAfterDays ignores a non-numeric value and falls through", () => {
+  assert.equal(
+    resolveStaleAfterDays({ GLOSSARY_STALE_DAYS: "soon" }, []),
+    DEFAULT_STALE_AFTER_DAYS,
+  );
+  assert.equal(
+    resolveStaleAfterDays({ GLOSSARY_STALE_DAYS: "90" }, ["--stale-days", "0"]),
+    90,
+    "zero is not positive, so the argument falls through to the variable",
+  );
+});
+
+test("resolveStaleAfterDays ignores a negative value", () => {
+  assert.equal(resolveStaleAfterDays({}, ["--stale-days", "-5"]), DEFAULT_STALE_AFTER_DAYS);
+});
+
+test("describeStaleAfterDaysSource names the origin of the threshold", () => {
+  assert.equal(describeStaleAfterDaysSource({}, ["--stale-days", "30"]), "argument");
+  assert.equal(
+    describeStaleAfterDaysSource({ GLOSSARY_STALE_DAYS: "90" }, []),
+    "environment",
+  );
+  assert.equal(describeStaleAfterDaysSource({}, []), "default");
+  assert.equal(
+    describeStaleAfterDaysSource({ GLOSSARY_STALE_DAYS: "oops" }, []),
+    "default",
+    "an invalid value does not count as a source",
+  );
 });

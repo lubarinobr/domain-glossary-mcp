@@ -321,6 +321,58 @@ test("lookupTerm reports updatedAt for a documented term", () => {
   assert.ok(result.updatedAt, "updatedAt is present");
 });
 
+/** Moves updated_at back by the given number of days for the one row. */
+function ageRow(days: number): void {
+  db.prepare(
+    `UPDATE glossary SET updated_at = datetime('now', ?)`,
+  ).run(`-${days} days`);
+}
+
+test("lookupTerm marks a fresh definition as not stale", () => {
+  saveTerm(db, { project: "pipeline", term: "Order", description: "A production order." });
+
+  const result = lookupTerm(db, { project: "pipeline", term: "Order" });
+
+  assert.equal(result.stale, false);
+  assert.equal(result.ageDays, 0);
+  assert.equal(result.staleAfterDays, 180, "the default threshold applies");
+});
+
+test("lookupTerm marks an old definition as stale", () => {
+  saveTerm(db, { project: "pipeline", term: "Order", description: "A production order." });
+  ageRow(200);
+
+  const result = lookupTerm(db, { project: "pipeline", term: "Order" });
+
+  assert.equal(result.stale, true);
+  assert.ok(result.ageDays !== null && result.ageDays >= 199);
+});
+
+test("lookupTerm respects a custom staleAfterDays threshold", () => {
+  saveTerm(db, { project: "pipeline", term: "Order", description: "A production order." });
+  ageRow(40);
+
+  assert.equal(
+    lookupTerm(db, { project: "pipeline", term: "Order" }, { staleAfterDays: 30 }).stale,
+    true,
+    "40 days is over a 30-day limit",
+  );
+  assert.equal(
+    lookupTerm(db, { project: "pipeline", term: "Order" }, { staleAfterDays: 90 }).stale,
+    false,
+    "40 days is under a 90-day limit",
+  );
+});
+
+test("lookupTerm reports null age and stale for an undocumented term", () => {
+  const result = lookupTerm(db, { project: "pipeline", term: "Shipment" });
+
+  assert.equal(result.status, "undocumented");
+  assert.equal(result.ageDays, null);
+  assert.equal(result.stale, null);
+  assert.equal(result.staleAfterDays, 180);
+});
+
 test("touchTerm moves updated_at forward and keeps the description", () => {
   saveTerm(db, { project: "pipeline", term: "Order", description: "A production order." });
   db.prepare("UPDATE glossary SET updated_at = '2000-01-01 00:00:00'").run();

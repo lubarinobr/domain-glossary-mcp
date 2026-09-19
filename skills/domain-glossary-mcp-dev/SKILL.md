@@ -14,8 +14,8 @@ and use the server, read the `domain-glossary-mcp` skill instead.
 src/
   index.ts       bin entry, stdio transport, SIGINT and SIGTERM
   server.ts      McpServer and the 4 tool registrations
-  db.ts          path resolution, connection, WAL, schema, migrations
-  glossary.ts    lookupTerm, saveTerm, touchTerm, listMissingTerms
+  db.ts          path and threshold resolution, connection, WAL, schema, migrations
+  glossary.ts    lookupTerm, saveTerm, touchTerm, listMissingTerms, staleness
   validation.ts  trim, the rejected suffixes, the optional reference
   logger.ts      JSON lines on stderr
 test/            one file per module, plus smoke.test.ts
@@ -80,6 +80,17 @@ These cost time if you meet them without warning.
   `PRAGMA table_info` and runs `ALTER TABLE ... ADD COLUMN` for a missing
   column. Add a new column there, and keep it nullable, because an old row has
   no value for it.
+- **Config resolution follows one pattern in `db.ts`.** A setting reads the
+  command-line flag first, then the environment variable, then a default. The
+  `--db` path and the `--stale-days` threshold both use the shared `readFlag`
+  helper. `resolveStaleAfterDays` rejects a value that is not a positive
+  integer and falls through to the next source, so a typo keeps the default.
+  Each setting has a `describe...Source` function for the startup log.
+- **The server computes staleness, the agent does not.** `lookupTerm` returns
+  `ageDays`, `stale` and `staleAfterDays`. The threshold flows from `index.ts`
+  through `createServer` options to `lookupTerm`. Keep the date math in
+  `ageInDays`, which reads the SQLite UTC timestamp and never returns a
+  negative age.
 
 ## Add a tool
 

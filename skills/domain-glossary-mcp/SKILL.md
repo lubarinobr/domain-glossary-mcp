@@ -145,10 +145,12 @@ expansion.
 The startup log reports the choice, which settles any doubt about precedence:
 
 ```json
-{"level":"info","message":"domain-glossary MCP server ready","dbPath":"/tmp/team/glossary.db","dbPathSource":"argument"}
+{"level":"info","message":"domain-glossary MCP server ready","dbPath":"/tmp/team/glossary.db","dbPathSource":"argument","staleAfterDays":180,"staleAfterDaysSource":"default"}
 ```
 
-The value of `dbPathSource` is `argument`, `environment` or `default`.
+The value of `dbPathSource` is `argument`, `environment` or `default`. The
+`staleAfterDays` field reports the staleness threshold, and
+`staleAfterDaysSource` reports its origin with the same 3 values.
 
 Never point the path inside `node_modules`. npm deletes that content on each
 reinstall.
@@ -161,7 +163,7 @@ sits inside a repository.
 
 | Tool | Input | Result |
 |---|---|---|
-| `lookup_term` | `project`, `term` | the definition and the time of the last update, or the term marked undocumented and the gap recorded |
+| `lookup_term` | `project`, `term` | the definition, its age and a `stale` flag, or the term marked undocumented and the gap recorded |
 | `save_term` | `project`, `term`, `description`, `reference` (optional) | creates or replaces the definition, records the source and sets the update time to now |
 | `refresh_term` | `project`, `term` | moves the update time to now, keeps the text |
 | `list_missing_terms` | `project` (optional) | the terms that have no definition |
@@ -232,20 +234,28 @@ shared glossary, so it needs one clear confirmation.
 
 ## When the definition looks stale
 
-Every documented term carries an update time. `lookup_term` reports it, for
-example `(last updated 2024-03-01 10:00:00 UTC)`. The time is the moment of the
-last `save_term` or `refresh_term` call.
+The server judges staleness for you. It does not only report the date; it
+compares the age against a threshold and returns a clear signal. `lookup_term`
+adds these fields to the result:
 
-Use the time to judge the definition. When the code changed a lot since that
-date, or the date is old, the definition may be outdated. Follow these steps.
-Do one step at a time.
+- `ageDays`: the age of the definition in whole days.
+- `stale`: `true` when the age reaches the threshold, `false` otherwise.
+- `staleAfterDays`: the threshold in effect, 180 days (about 6 months) by
+  default.
 
-1. Tell the dev the date of the last update. Say that the definition may be
+When `stale` is `true`, the text of the result carries a warning that starts
+with `⚠️` and the words "MAY be outdated". Do not do the date math yourself;
+read the `stale` field.
+
+Follow these steps when `stale` is `true`. Do one step at a time.
+
+1. Tell the dev the age of the definition. Say that the definition may be
    outdated.
 2. Ask the dev if the definition is still correct.
 3. Read the answer:
    - If the definition is still correct, call `refresh_term` with the project
-     and the term. The call moves the update time to now and keeps the text.
+     and the term. The call moves the update time to now, so `stale` becomes
+     `false` on the next lookup.
    - If the definition needs a change, follow the steps in "When the term is
      not found" from step 4. Write a new draft, get a confirmation, then call
      `save_term`.
@@ -253,6 +263,31 @@ Do one step at a time.
 
 `refresh_term` needs a documented term. The call fails on a gap (a NULL
 description); use `save_term` for a gap instead.
+
+### Set the staleness threshold
+
+The threshold is a config choice, not a code change. Set it in the same place
+as the database path.
+
+- `--stale-days <n>` in the `args` array of the config.
+- `GLOSSARY_STALE_DAYS` in the `env` block of the config.
+- The default of 180 days, when neither is set.
+
+The argument wins over the variable. A value that is not a positive integer
+falls through to the next source, so a typo keeps the default rather than turns
+the signal off. Set a smaller value for a fast-moving domain, or a larger value
+for a stable one.
+
+```json
+{
+  "mcpServers": {
+    "domain-glossary": {
+      "command": "npx",
+      "args": ["-y", "domain-glossary-mcp", "--db", "/abs/path/glossary.db", "--stale-days", "90"]
+    }
+  }
+}
+```
 
 ## Behaviour to expect
 
@@ -265,6 +300,9 @@ description); use `save_term` for a gap instead.
 - `refresh_term` moves `updated_at` forward and keeps the text and the
   `reference`. It fails on a term that has no entry, and on a gap that has no
   definition yet.
+- `lookup_term` computes `stale` from the age and the threshold. A
+  `refresh_term` or a `save_term` resets the age to 0, so `stale` becomes
+  `false`.
 - Every field is trimmed before use.
 - A validation failure comes back as a tool error with a readable message, not
   as a protocol error. Read the message and correct the input.

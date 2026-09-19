@@ -1,7 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import { listMissingTerms, lookupTerm, saveTerm, touchTerm } from "./glossary.js";
+import {
+  listMissingTerms,
+  lookupTerm,
+  saveTerm,
+  touchTerm,
+  type LookupResult,
+} from "./glossary.js";
 import { logger } from "./logger.js";
 
 const PROJECT_DESCRIPTION =
@@ -16,13 +22,26 @@ const REFERENCE_DESCRIPTION =
   "Use a URL for a document, \"user\" when a person gave the definition, or \"agent\" " +
   "when you wrote it from the code. Leave it out when the source is unknown.";
 
+export interface ServerOptions {
+  /**
+   * The staleness threshold in days. lookup_term marks a definition as stale
+   * when its age reaches this value. Defaults to the glossary default.
+   */
+  staleAfterDays?: number;
+}
+
 /**
- * Builds the MCP server with the 3 glossary tools.
+ * Builds the MCP server with the 4 glossary tools.
  *
  * The caller owns the database connection, which keeps the tests free of
- * global state.
+ * global state. The caller also passes the staleness threshold, so the same
+ * value drives the log line and the tool result.
  */
-export function createServer(db: DatabaseSync): McpServer {
+export function createServer(
+  db: DatabaseSync,
+  options: ServerOptions = {},
+): McpServer {
+  const staleAfterDays = options.staleAfterDays;
   const server = new McpServer(
     { name: "domain-glossary", version: "0.1.0" },
     {
@@ -49,16 +68,12 @@ export function createServer(db: DatabaseSync): McpServer {
     },
     async ({ project, term }) =>
       guard(() => {
-        const result = lookupTerm(db, { project, term });
+        const result = lookupTerm(db, { project, term }, { staleAfterDays });
         const text =
           result.status === "documented"
             ? `${result.term}: ${result.description}` +
               (result.reference ? `\nSource: ${result.reference}.` : "") +
-              (result.updatedAt
-                ? `\n(last updated ${result.updatedAt} UTC. ` +
-                  `If this looks outdated, ask the dev to confirm the definition, ` +
-                  `then call save_term with the new text, or call refresh_term to mark it current.)`
-                : "")
+              staleLine(result)
             : `${result.term} is undocumented in ${result.project}. ` +
               `The gap is now recorded. Call save_term once you know the business definition.`;
         return { text, data: result };
@@ -142,6 +157,30 @@ export function createServer(db: DatabaseSync): McpServer {
   );
 
   return server;
+}
+
+/**
+ * Builds the age line for a documented term. A stale definition gets a clear
+ * warning and a next step; a fresh one gets a short note. The server computes
+ * the staleness, so the agent reads a signal instead of the raw date.
+ */
+function staleLine(result: LookupResult): string {
+  if (!result.updatedAt || result.ageDays === null) {
+    return "";
+  }
+
+  const age = `last updated ${result.updatedAt} UTC, ${result.ageDays} days ago`;
+
+  if (result.stale) {
+    return (
+      `\n⚠️ This definition is stale (${age}, over the ${result.staleAfterDays}-day limit). ` +
+      `It MAY be outdated. Ask the dev to confirm it. ` +
+      `If it changed, call save_term with the new text. ` +
+      `If it is still correct, call refresh_term to mark it current.`
+    );
+  }
+
+  return `\n(${age}.)`;
 }
 
 /**

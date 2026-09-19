@@ -99,6 +99,32 @@ test("lookup_term reports when a documented term was last updated", async () => 
   assert.ok(found.structuredContent?.updatedAt);
 });
 
+test("lookup_term warns when a definition is stale", async () => {
+  await call("save_term", {
+    project: "pipeline",
+    term: "Order",
+    description: "A production order.",
+  });
+  db.prepare("UPDATE glossary SET updated_at = datetime('now', '-200 days')").run();
+
+  const found = await call("lookup_term", { project: "pipeline", term: "Order" });
+  assert.equal(found.structuredContent?.stale, true);
+  assert.match(firstText(found), /stale/i);
+  assert.match(firstText(found), /MAY be outdated/i);
+});
+
+test("lookup_term does not warn when a definition is fresh", async () => {
+  await call("save_term", {
+    project: "pipeline",
+    term: "Order",
+    description: "A production order.",
+  });
+
+  const found = await call("lookup_term", { project: "pipeline", term: "Order" });
+  assert.equal(found.structuredContent?.stale, false);
+  assert.doesNotMatch(firstText(found), /stale/i);
+});
+
 test("save_term records a reference and lookup_term reports the source", async () => {
   const saved = await call("save_term", {
     project: "pipeline",

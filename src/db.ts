@@ -45,6 +45,12 @@ function migrate(db: DatabaseSync): void {
 /** Flags that carry the database path on the command line. */
 const DB_FLAGS = ["--db", "--db-path"] as const;
 
+/** Flags that carry the staleness threshold on the command line. */
+const STALE_FLAGS = ["--stale-days"] as const;
+
+/** The staleness threshold in days when no flag and no variable set it. */
+export const DEFAULT_STALE_AFTER_DAYS = 180;
+
 /**
  * Resolves the database path.
  *
@@ -75,13 +81,21 @@ export function resolveDbPath(
 
 /** Reads `--db <path>` or `--db=<path>`. Returns null when the value is absent. */
 function readDbFlag(argv: string[]): string | null {
+  return readFlag(argv, DB_FLAGS);
+}
+
+/**
+ * Reads a `--flag <value>` or `--flag=<value>` argument for any of the given
+ * flags. Returns the first value found, or null when the value is absent.
+ */
+function readFlag(argv: string[], flags: readonly string[]): string | null {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === undefined) {
       continue;
     }
 
-    for (const flag of DB_FLAGS) {
+    for (const flag of flags) {
       if (token === flag) {
         const value = argv[index + 1]?.trim();
         return value ? value : null;
@@ -164,4 +178,59 @@ export function describeDbPathSource(
     return "environment";
   }
   return "default";
+}
+
+/**
+ * Resolves the staleness threshold in days. lookup_term marks a definition as
+ * stale when its age reaches this value.
+ *
+ * 1. The `--stale-days <n>` argument in the `args` array of the MCP config.
+ * 2. `GLOSSARY_STALE_DAYS` in the `env` block of the same config.
+ * 3. The default of 180 days, about 6 months.
+ *
+ * A value that is not a positive integer falls through to the next source, so
+ * a typo never turns off the staleness signal in a surprising way.
+ */
+export function resolveStaleAfterDays(
+  env: Record<string, string | undefined> = process.env,
+  argv: string[] = process.argv.slice(2),
+): number {
+  const fromArgs = parsePositiveInteger(readFlag(argv, STALE_FLAGS));
+  if (fromArgs !== null) {
+    return fromArgs;
+  }
+
+  const fromEnv = parsePositiveInteger(env.GLOSSARY_STALE_DAYS);
+  if (fromEnv !== null) {
+    return fromEnv;
+  }
+
+  return DEFAULT_STALE_AFTER_DAYS;
+}
+
+/** Names the origin of the resolved threshold. The startup log uses it. */
+export function describeStaleAfterDaysSource(
+  env: Record<string, string | undefined> = process.env,
+  argv: string[] = process.argv.slice(2),
+): "argument" | "environment" | "default" {
+  if (parsePositiveInteger(readFlag(argv, STALE_FLAGS)) !== null) {
+    return "argument";
+  }
+  if (parsePositiveInteger(env.GLOSSARY_STALE_DAYS) !== null) {
+    return "environment";
+  }
+  return "default";
+}
+
+/** Parses a positive integer. Returns null for any other input. */
+function parsePositiveInteger(value: string | null | undefined): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return null;
+  }
+  const parsed = Number.parseInt(trimmed, 10);
+  return parsed > 0 ? parsed : null;
 }

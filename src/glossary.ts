@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { logger } from "./logger.js";
+import { DEFAULT_STALE_AFTER_DAYS } from "./db.js";
 import {
   validateDescription,
   validateProject,
@@ -12,6 +13,14 @@ export interface LookupInput {
   term: unknown;
 }
 
+export interface LookupOptions {
+  /**
+   * The staleness threshold in days. A documented term with an age at or above
+   * this value comes back with stale = true. Defaults to 180 days.
+   */
+  staleAfterDays?: number;
+}
+
 export interface LookupResult {
   project: string;
   term: string;
@@ -19,6 +28,12 @@ export interface LookupResult {
   description: string | null;
   reference: string | null;
   updatedAt: string | null;
+  /** Age of the definition in whole days. Null for an undocumented term. */
+  ageDays: number | null;
+  /** True when the age reaches the threshold. Null for an undocumented term. */
+  stale: boolean | null;
+  /** The threshold in effect, so the reader sees the rule that was applied. */
+  staleAfterDays: number;
 }
 
 interface GlossaryRow {
@@ -36,9 +51,14 @@ interface GlossaryRow {
  * That NULL marks the gap, so the missing definition stays visible instead of
  * disappearing after the call.
  */
-export function lookupTerm(db: DatabaseSync, input: LookupInput): LookupResult {
+export function lookupTerm(
+  db: DatabaseSync,
+  input: LookupInput,
+  options: LookupOptions = {},
+): LookupResult {
   const project = validateProject(input.project);
   const term = validateTerm(input.term);
+  const staleAfterDays = options.staleAfterDays ?? DEFAULT_STALE_AFTER_DAYS;
 
   const row = db
     .prepare(
@@ -48,6 +68,7 @@ export function lookupTerm(db: DatabaseSync, input: LookupInput): LookupResult {
 
   if (row && row.description !== null) {
     logger.debug("glossary hit", { project: row.project, term: row.term });
+    const ageDays = ageInDays(row.updated_at);
     return {
       project: row.project,
       term: row.term,
@@ -55,6 +76,9 @@ export function lookupTerm(db: DatabaseSync, input: LookupInput): LookupResult {
       description: row.description,
       reference: row.reference,
       updatedAt: row.updated_at,
+      ageDays,
+      stale: ageDays >= staleAfterDays,
+      staleAfterDays,
     };
   }
 
@@ -74,7 +98,28 @@ export function lookupTerm(db: DatabaseSync, input: LookupInput): LookupResult {
     description: null,
     reference: row?.reference ?? null,
     updatedAt: row?.updated_at ?? null,
+    ageDays: null,
+    stale: null,
+    staleAfterDays,
   };
+}
+
+/**
+ * Returns the whole days between the stored timestamp and now. SQLite writes
+ * `datetime('now')` as `YYYY-MM-DD HH:MM:SS` in UTC; the ` ` becomes `T` and a
+ * `Z` marks the zone so Date reads it as UTC. A future or unreadable timestamp
+ * gives 0, never a negative age.
+ */
+function ageInDays(updatedAt: string): number {
+  const parsed = Date.parse(`${updatedAt.replace(" ", "T")}Z`);
+  if (Number.isNaN(parsed)) {
+    return 0;
+  }
+  const millis = Date.now() - parsed;
+  if (millis <= 0) {
+    return 0;
+  }
+  return Math.floor(millis / 86_400_000);
 }
 
 export interface SaveInput {
