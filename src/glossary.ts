@@ -113,6 +113,60 @@ export function saveTerm(db: DatabaseSync, input: SaveInput): SaveResult {
   };
 }
 
+export interface TouchInput {
+  project: unknown;
+  term: unknown;
+}
+
+export interface TouchResult {
+  project: string;
+  term: string;
+  updatedAt: string;
+}
+
+/**
+ * Moves updated_at to now() without a change to the description.
+ *
+ * The agent calls this when the dev confirms that a definition is still
+ * correct. The refresh marks the term as current, so a later lookup does not
+ * treat the term as stale.
+ */
+export function touchTerm(db: DatabaseSync, input: TouchInput): TouchResult {
+  const project = validateProject(input.project);
+  const term = validateTerm(input.term);
+
+  const row = db
+    .prepare("SELECT description FROM glossary WHERE project = ? AND term = ?")
+    .get(project, term) as Pick<GlossaryRow, "description"> | undefined;
+
+  if (!row) {
+    throw new Error(
+      `"${term}" has no entry in ${project}. Call save_term to create the definition.`,
+    );
+  }
+  if (row.description === null) {
+    throw new Error(
+      `"${term}" in ${project} has no definition yet. Call save_term instead of refresh_term.`,
+    );
+  }
+
+  const updated = db
+    .prepare(
+      `UPDATE glossary SET updated_at = datetime('now')
+       WHERE project = ? AND term = ?
+       RETURNING project, term, updated_at`,
+    )
+    .get(project, term) as unknown as GlossaryRow;
+
+  logger.info("glossary entry refreshed", { project, term });
+
+  return {
+    project: updated.project,
+    term: updated.term,
+    updatedAt: updated.updated_at,
+  };
+}
+
 export interface ListMissingInput {
   /** Optional filter. When absent, the call covers every project. */
   project?: unknown;

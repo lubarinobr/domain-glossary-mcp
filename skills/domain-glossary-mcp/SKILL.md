@@ -109,8 +109,8 @@ During development, replace `command` and `args` with the built entry point:
 Run `npm run build` first. The config points at compiled output, not at
 TypeScript.
 
-Keep `save_term` out of `autoApprove`. A write to a shared glossary deserves
-one confirmation.
+Keep `save_term` and `refresh_term` out of `autoApprove`. A write to a shared
+glossary deserves one confirmation.
 
 After a config change, reconnect the server from the MCP Server view in the
 Kiro feature panel. A restart of the IDE is not necessary.
@@ -160,8 +160,9 @@ sits inside a repository.
 
 | Tool | Input | Result |
 |---|---|---|
-| `lookup_term` | `project`, `term` | the definition, or the term marked undocumented and the gap recorded |
-| `save_term` | `project`, `term`, `description` | creates or replaces the definition |
+| `lookup_term` | `project`, `term` | the definition and the time of the last update, or the term marked undocumented and the gap recorded |
+| `save_term` | `project`, `term`, `description` | creates or replaces the definition and sets the update time to now |
+| `refresh_term` | `project`, `term` | moves the update time to now, keeps the text |
 | `list_missing_terms` | `project` (optional) | the terms that have no definition |
 
 `project` is the name of the repository, for example
@@ -215,6 +216,30 @@ at a time.
 Do not call `save_term` before the dev confirms the text. The write goes to a
 shared glossary, so it needs one clear confirmation.
 
+## When the definition looks stale
+
+Every documented term carries an update time. `lookup_term` reports it, for
+example `(last updated 2024-03-01 10:00:00 UTC)`. The time is the moment of the
+last `save_term` or `refresh_term` call.
+
+Use the time to judge the definition. When the code changed a lot since that
+date, or the date is old, the definition may be outdated. Follow these steps.
+Do one step at a time.
+
+1. Tell the dev the date of the last update. Say that the definition may be
+   outdated.
+2. Ask the dev if the definition is still correct.
+3. Read the answer:
+   - If the definition is still correct, call `refresh_term` with the project
+     and the term. The call moves the update time to now and keeps the text.
+   - If the definition needs a change, follow the steps in "When the term is
+     not found" from step 4. Write a new draft, get a confirmation, then call
+     `save_term`.
+   - If the dev does not answer, leave the entry as it is.
+
+`refresh_term` needs a documented term. The call fails on a gap (a NULL
+description); use `save_term` for a gap instead.
+
 ## Behaviour to expect
 
 - The comparison of `project` and `term` ignores letter case. `Order` and
@@ -222,6 +247,8 @@ shared glossary, so it needs one clear confirmation.
 - The same term in 2 projects gives 2 independent rows.
 - `save_term` is an upsert. A second call replaces the text and moves
   `updated_at` forward.
+- `refresh_term` moves `updated_at` forward and keeps the text. It fails on a
+  term that has no entry, and on a gap that has no definition yet.
 - Every field is trimmed before use.
 - A validation failure comes back as a tool error with a readable message, not
   as a protocol error. Read the message and correct the input.
@@ -261,4 +288,4 @@ printf '%s\n' \
   | npx -y domain-glossary-mcp --db /tmp/glossary-probe/glossary.db
 ```
 
-The response must list the 3 tools. Delete `/tmp/glossary-probe` afterwards.
+The response must list the 4 tools. Delete `/tmp/glossary-probe` afterwards.

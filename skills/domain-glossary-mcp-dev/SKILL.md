@@ -13,9 +13,9 @@ and use the server, read the `domain-glossary-mcp` skill instead.
 ```
 src/
   index.ts       bin entry, stdio transport, SIGINT and SIGTERM
-  server.ts      McpServer and the 3 tool registrations
+  server.ts      McpServer and the 4 tool registrations
   db.ts          path resolution, connection, WAL, schema
-  glossary.ts    lookupTerm, saveTerm, listMissingTerms
+  glossary.ts    lookupTerm, saveTerm, touchTerm, listMissingTerms
   validation.ts  trim and the rejected suffixes
   logger.ts      JSON lines on stderr
 test/            one file per module, plus smoke.test.ts

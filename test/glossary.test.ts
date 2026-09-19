@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "../src/db.js";
-import { listMissingTerms, lookupTerm, saveTerm } from "../src/glossary.js";
+import { listMissingTerms, lookupTerm, saveTerm, touchTerm } from "../src/glossary.js";
 
 let workDir: string;
 let db: DatabaseSync;
@@ -235,6 +235,57 @@ test("saveTerm trims every field", () => {
   assert.equal(row.project, "pipeline");
   assert.equal(row.term, "Order");
   assert.equal(row.description, "A production order.");
+});
+
+test("lookupTerm reports updatedAt for a documented term", () => {
+  saveTerm(db, { project: "pipeline", term: "Order", description: "A production order." });
+
+  const result = lookupTerm(db, { project: "pipeline", term: "Order" });
+
+  assert.equal(result.status, "documented");
+  assert.ok(result.updatedAt, "updatedAt is present");
+});
+
+test("touchTerm moves updated_at forward and keeps the description", () => {
+  saveTerm(db, { project: "pipeline", term: "Order", description: "A production order." });
+  db.prepare("UPDATE glossary SET updated_at = '2000-01-01 00:00:00'").run();
+
+  const result = touchTerm(db, { project: "pipeline", term: "Order" });
+
+  assert.equal(result.term, "Order");
+  assert.equal(result.project, "pipeline");
+  assert.notEqual(result.updatedAt, "2000-01-01 00:00:00");
+  assert.equal(
+    lookupTerm(db, { project: "pipeline", term: "Order" }).description,
+    "A production order.",
+    "the description stays the same",
+  );
+});
+
+test("touchTerm matches the term without regard to letter case", () => {
+  saveTerm(db, { project: "pipeline", term: "Order", description: "A production order." });
+
+  const result = touchTerm(db, { project: "PIPELINE", term: "order" });
+
+  assert.equal(result.term, "Order", "the stored spelling comes back");
+  assert.equal(countRows(), 1);
+});
+
+test("touchTerm rejects a term that has no entry", () => {
+  assert.throws(
+    () => touchTerm(db, { project: "pipeline", term: "Shipment" }),
+    /no entry/i,
+  );
+  assert.equal(countRows(), 0);
+});
+
+test("touchTerm rejects a gap that has no definition yet", () => {
+  lookupTerm(db, { project: "pipeline", term: "Shipment" });
+
+  assert.throws(
+    () => touchTerm(db, { project: "pipeline", term: "Shipment" }),
+    /no definition/i,
+  );
 });
 
 test("listMissingTerms returns an empty list on a clean database", () => {

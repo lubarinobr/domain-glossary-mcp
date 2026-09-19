@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import { listMissingTerms, lookupTerm, saveTerm } from "./glossary.js";
+import { listMissingTerms, lookupTerm, saveTerm, touchTerm } from "./glossary.js";
 import { logger } from "./logger.js";
 
 const PROJECT_DESCRIPTION =
@@ -47,7 +47,12 @@ export function createServer(db: DatabaseSync): McpServer {
         const result = lookupTerm(db, { project, term });
         const text =
           result.status === "documented"
-            ? `${result.term}: ${result.description}`
+            ? `${result.term}: ${result.description}` +
+              (result.updatedAt
+                ? `\n(last updated ${result.updatedAt} UTC. ` +
+                  `If this looks outdated, ask the dev to confirm the definition, ` +
+                  `then call save_term with the new text, or call refresh_term to mark it current.)`
+                : "")
             : `${result.term} is undocumented in ${result.project}. ` +
               `The gap is now recorded. Call save_term once you know the business definition.`;
         return { text, data: result };
@@ -75,6 +80,30 @@ export function createServer(db: DatabaseSync): McpServer {
         const result = saveTerm(db, { project, term, description });
         return {
           text: `${result.term} in ${result.project} was ${result.status}.`,
+          data: result,
+        };
+      }),
+  );
+
+  server.registerTool(
+    "refresh_term",
+    {
+      title: "Refresh a domain term",
+      description:
+        "Marks an existing definition as current by moving its updated_at to now, without a change to the text. " +
+        "Call this when the dev confirms that a definition is still correct but looks stale. " +
+        "To change the text, call save_term instead.",
+      inputSchema: {
+        project: z.string().describe(PROJECT_DESCRIPTION),
+        term: z.string().describe(TERM_DESCRIPTION),
+      },
+      annotations: { readOnlyHint: false, idempotentHint: false },
+    },
+    async ({ project, term }) =>
+      guard(() => {
+        const result = touchTerm(db, { project, term });
+        return {
+          text: `${result.term} in ${result.project} is now current (updated ${result.updatedAt} UTC).`,
           data: result,
         };
       }),

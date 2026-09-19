@@ -50,12 +50,12 @@ function firstText(result: ToolResult): string {
   return result.content[0]?.text ?? "";
 }
 
-test("tools/list exposes the 3 glossary tools", async () => {
+test("tools/list exposes the 4 glossary tools", async () => {
   const { tools } = await client.listTools();
 
   assert.deepEqual(
     tools.map((tool) => tool.name).sort(),
-    ["list_missing_terms", "lookup_term", "save_term"],
+    ["list_missing_terms", "lookup_term", "refresh_term", "save_term"],
   );
 
   const lookup = tools.find((tool) => tool.name === "lookup_term");
@@ -85,6 +85,40 @@ test("save_term then lookup_term returns the definition", async () => {
   const found = await call("lookup_term", { project: "pipeline", term: "Order" });
   assert.equal(found.structuredContent?.status, "documented");
   assert.match(firstText(found), /A customer request to produce goods\./);
+});
+
+test("lookup_term reports when a documented term was last updated", async () => {
+  await call("save_term", {
+    project: "pipeline",
+    term: "Order",
+    description: "A customer request to produce goods.",
+  });
+
+  const found = await call("lookup_term", { project: "pipeline", term: "Order" });
+  assert.match(firstText(found), /last updated/i);
+  assert.ok(found.structuredContent?.updatedAt);
+});
+
+test("refresh_term marks a definition as current without a text change", async () => {
+  await call("save_term", {
+    project: "pipeline",
+    term: "Order",
+    description: "A production order.",
+  });
+
+  const refreshed = await call("refresh_term", { project: "pipeline", term: "Order" });
+  assert.notEqual(refreshed.isError, true);
+  assert.match(firstText(refreshed), /current/i);
+
+  const found = await call("lookup_term", { project: "pipeline", term: "Order" });
+  assert.match(firstText(found), /A production order\./);
+});
+
+test("refresh_term on an unknown term comes back as a tool error", async () => {
+  const result = await call("refresh_term", { project: "pipeline", term: "Ghost" });
+
+  assert.equal(result.isError, true);
+  assert.match(firstText(result), /no entry/i);
 });
 
 test("list_missing_terms returns the recorded gaps", async () => {
