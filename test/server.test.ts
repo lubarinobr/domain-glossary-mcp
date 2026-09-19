@@ -99,6 +99,21 @@ test("lookup_term reports when a documented term was last updated", async () => 
   assert.ok(found.structuredContent?.updatedAt);
 });
 
+test("save_term records a reference and lookup_term reports the source", async () => {
+  const saved = await call("save_term", {
+    project: "pipeline",
+    term: "Order",
+    description: "A customer request to produce goods.",
+    reference: "https://wiki/order",
+  });
+  assert.equal(saved.structuredContent?.reference, "https://wiki/order");
+  assert.match(firstText(saved), /Source: https:\/\/wiki\/order/);
+
+  const found = await call("lookup_term", { project: "pipeline", term: "Order" });
+  assert.equal(found.structuredContent?.reference, "https://wiki/order");
+  assert.match(firstText(found), /Source: https:\/\/wiki\/order/);
+});
+
 test("refresh_term marks a definition as current without a text change", async () => {
   await call("save_term", {
     project: "pipeline",

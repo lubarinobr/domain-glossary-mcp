@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateProject, validateTerm, validateDescription } from "../src/validation.js";
+import {
+  validateProject,
+  validateTerm,
+  validateDescription,
+  validateReference,
+} from "../src/validation.js";
 
 test("validateProject trims the value", () => {
   assert.equal(validateProject("  pipeline  "), "pipeline");
@@ -51,4 +56,24 @@ test("validateDescription trims the value", () => {
 
 test("validateDescription rejects an empty value", () => {
   assert.throws(() => validateDescription("   "), /description.*empty/i);
+});
+
+test("validateReference trims a value", () => {
+  assert.equal(validateReference("  https://docs/order  "), "https://docs/order");
+});
+
+test("validateReference returns null for undefined", () => {
+  assert.equal(validateReference(undefined), null);
+});
+
+test("validateReference returns null for null", () => {
+  assert.equal(validateReference(null), null);
+});
+
+test("validateReference returns null for a whitespace-only value", () => {
+  assert.equal(validateReference("   "), null);
+});
+
+test("validateReference returns null for a non-string value", () => {
+  assert.equal(validateReference(42), null);
 });

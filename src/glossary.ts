@@ -1,6 +1,11 @@
 import type { DatabaseSync } from "node:sqlite";
 import { logger } from "./logger.js";
-import { validateDescription, validateProject, validateTerm } from "./validation.js";
+import {
+  validateDescription,
+  validateProject,
+  validateReference,
+  validateTerm,
+} from "./validation.js";
 
 export interface LookupInput {
   project: unknown;
@@ -12,6 +17,7 @@ export interface LookupResult {
   term: string;
   status: "documented" | "undocumented";
   description: string | null;
+  reference: string | null;
   updatedAt: string | null;
 }
 
@@ -19,6 +25,7 @@ interface GlossaryRow {
   project: string;
   term: string;
   description: string | null;
+  reference: string | null;
   updated_at: string;
 }
 
@@ -35,7 +42,7 @@ export function lookupTerm(db: DatabaseSync, input: LookupInput): LookupResult {
 
   const row = db
     .prepare(
-      "SELECT project, term, description, updated_at FROM glossary WHERE project = ? AND term = ?",
+      "SELECT project, term, description, reference, updated_at FROM glossary WHERE project = ? AND term = ?",
     )
     .get(project, term) as GlossaryRow | undefined;
 
@@ -46,6 +53,7 @@ export function lookupTerm(db: DatabaseSync, input: LookupInput): LookupResult {
       term: row.term,
       status: "documented",
       description: row.description,
+      reference: row.reference,
       updatedAt: row.updated_at,
     };
   }
@@ -64,6 +72,7 @@ export function lookupTerm(db: DatabaseSync, input: LookupInput): LookupResult {
     term: row?.term ?? term,
     status: "undocumented",
     description: null,
+    reference: row?.reference ?? null,
     updatedAt: row?.updated_at ?? null,
   };
 }
@@ -72,12 +81,15 @@ export interface SaveInput {
   project: unknown;
   term: unknown;
   description: unknown;
+  /** Optional source of the description, for example a URL, "user" or "agent". */
+  reference?: unknown;
 }
 
 export interface SaveResult {
   project: string;
   term: string;
   description: string;
+  reference: string | null;
   status: "created" | "updated";
 }
 
@@ -89,18 +101,20 @@ export function saveTerm(db: DatabaseSync, input: SaveInput): SaveResult {
   const project = validateProject(input.project);
   const term = validateTerm(input.term);
   const description = validateDescription(input.description);
+  const reference = validateReference(input.reference);
 
   const existing = db
     .prepare("SELECT project, term FROM glossary WHERE project = ? AND term = ?")
     .get(project, term) as Pick<GlossaryRow, "project" | "term"> | undefined;
 
   db.prepare(
-    `INSERT INTO glossary (project, term, description, updated_at)
-     VALUES (?, ?, ?, datetime('now'))
+    `INSERT INTO glossary (project, term, description, reference, updated_at)
+     VALUES (?, ?, ?, ?, datetime('now'))
      ON CONFLICT (project, term) DO UPDATE
        SET description = excluded.description,
+           reference = excluded.reference,
            updated_at = excluded.updated_at`,
-  ).run(project, term, description);
+  ).run(project, term, description, reference);
 
   const status = existing ? "updated" : "created";
   logger.info(`glossary entry ${status}`, { project, term });
@@ -109,6 +123,7 @@ export function saveTerm(db: DatabaseSync, input: SaveInput): SaveResult {
     project: existing?.project ?? project,
     term: existing?.term ?? term,
     description,
+    reference,
     status,
   };
 }
@@ -121,6 +136,7 @@ export interface TouchInput {
 export interface TouchResult {
   project: string;
   term: string;
+  reference: string | null;
   updatedAt: string;
 }
 
@@ -154,7 +170,7 @@ export function touchTerm(db: DatabaseSync, input: TouchInput): TouchResult {
     .prepare(
       `UPDATE glossary SET updated_at = datetime('now')
        WHERE project = ? AND term = ?
-       RETURNING project, term, updated_at`,
+       RETURNING project, term, reference, updated_at`,
     )
     .get(project, term) as unknown as GlossaryRow;
 
@@ -163,6 +179,7 @@ export function touchTerm(db: DatabaseSync, input: TouchInput): TouchResult {
   return {
     project: updated.project,
     term: updated.term,
+    reference: updated.reference,
     updatedAt: updated.updated_at,
   };
 }
@@ -175,6 +192,7 @@ export interface ListMissingInput {
 export interface MissingEntry {
   project: string;
   term: string;
+  reference: string | null;
   registeredAt: string;
 }
 
@@ -189,7 +207,7 @@ export function listMissingTerms(
   const hasFilter = input.project !== undefined && input.project !== null;
   const project = hasFilter ? validateProject(input.project) : null;
 
-  const sql = `SELECT project, term, updated_at
+  const sql = `SELECT project, term, reference, updated_at
      FROM glossary
      WHERE description IS NULL
        ${project === null ? "" : "AND project = ?"}
@@ -203,6 +221,7 @@ export function listMissingTerms(
   return rows.map((row) => ({
     project: row.project,
     term: row.term,
+    reference: row.reference,
     registeredAt: row.updated_at,
   }));
 }

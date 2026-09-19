@@ -54,12 +54,59 @@ test("openDatabase applies the glossary schema", () => {
       notnull: number;
     }>;
     const names = columns.map((column) => column.name);
-    assert.deepEqual(names, ["project", "term", "description", "updated_at"]);
+    assert.deepEqual(names, [
+      "project",
+      "term",
+      "description",
+      "reference",
+      "updated_at",
+    ]);
 
     const description = columns.find((column) => column.name === "description");
     assert.equal(description?.notnull, 0, "description must accept NULL");
+
+    const reference = columns.find((column) => column.name === "reference");
+    assert.equal(reference?.notnull, 0, "reference must accept NULL");
   } finally {
     db.close();
+  }
+});
+
+test("openDatabase adds the reference column to a legacy database", () => {
+  const dbPath = join(workDir, "legacy.db");
+
+  const legacy = openDatabase(dbPath);
+  legacy.exec("DROP TABLE glossary");
+  legacy.exec(
+    `CREATE TABLE glossary (
+       project     TEXT NOT NULL COLLATE NOCASE,
+       term        TEXT NOT NULL COLLATE NOCASE,
+       description TEXT,
+       updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+       PRIMARY KEY (project, term)
+     ) STRICT`,
+  );
+  legacy
+    .prepare("INSERT INTO glossary (project, term, description) VALUES (?, ?, ?)")
+    .run("pipeline", "Order", "A production order.");
+  legacy.close();
+
+  const migrated = openDatabase(dbPath);
+  try {
+    const names = (
+      migrated.prepare("PRAGMA table_info(glossary)").all() as Array<{
+        name: string;
+      }>
+    ).map((column) => column.name);
+    assert.ok(names.includes("reference"), "the migration adds the column");
+
+    const row = migrated
+      .prepare("SELECT description, reference FROM glossary WHERE term = ?")
+      .get("Order") as { description: string; reference: string | null };
+    assert.equal(row.description, "A production order.", "the old row survives");
+    assert.equal(row.reference, null, "the new column is NULL for old rows");
+  } finally {
+    migrated.close();
   }
 });
 

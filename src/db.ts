@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS glossary (
   project     TEXT NOT NULL COLLATE NOCASE,
   term        TEXT NOT NULL COLLATE NOCASE,
   description TEXT,
+  reference   TEXT,
   updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (project, term)
 ) STRICT;
@@ -23,6 +24,23 @@ CREATE TABLE IF NOT EXISTS glossary (
 CREATE INDEX IF NOT EXISTS glossary_missing_idx
   ON glossary (project) WHERE description IS NULL;
 `;
+
+/**
+ * Adds columns that a newer version introduced to a database that an older
+ * version created. CREATE TABLE IF NOT EXISTS never alters an existing table,
+ * so a new column needs an explicit ALTER.
+ */
+function migrate(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(glossary)").all() as Array<{
+    name: string;
+  }>;
+  const names = new Set(columns.map((column) => column.name));
+
+  if (!names.has("reference")) {
+    db.exec("ALTER TABLE glossary ADD COLUMN reference TEXT");
+    logger.debug("glossary schema migrated", { added: "reference" });
+  }
+}
 
 /** Flags that carry the database path on the command line. */
 const DB_FLAGS = ["--db", "--db-path"] as const;
@@ -120,6 +138,7 @@ export function openDatabase(dbPath: string = resolveDbPath()): DatabaseSync {
     db.exec("PRAGMA busy_timeout = 5000");
     db.exec("PRAGMA foreign_keys = ON");
     db.exec(SCHEMA);
+    migrate(db);
   } catch (cause) {
     db.close();
     throw new Error(

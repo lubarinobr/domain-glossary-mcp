@@ -201,6 +201,81 @@ test("saveTerm moves updated_at forward", () => {
   assert.notEqual(row.updated_at, "2000-01-01 00:00:00");
 });
 
+test("saveTerm stores the reference and lookupTerm returns it", () => {
+  const result = saveTerm(db, {
+    project: "pipeline",
+    term: "Order",
+    description: "A production order.",
+    reference: "https://wiki/order",
+  });
+
+  assert.equal(result.reference, "https://wiki/order");
+
+  const found = lookupTerm(db, { project: "pipeline", term: "Order" });
+  assert.equal(found.reference, "https://wiki/order");
+});
+
+test("saveTerm keeps the reference null when the caller omits it", () => {
+  const result = saveTerm(db, {
+    project: "pipeline",
+    term: "Order",
+    description: "A production order.",
+  });
+
+  assert.equal(result.reference, null);
+  assert.equal(
+    lookupTerm(db, { project: "pipeline", term: "Order" }).reference,
+    null,
+  );
+});
+
+test("saveTerm trims the reference", () => {
+  saveTerm(db, {
+    project: "pipeline",
+    term: "Order",
+    description: "A production order.",
+    reference: "  user  ",
+  });
+
+  const row = db
+    .prepare("SELECT reference FROM glossary WHERE term = ?")
+    .get("Order") as { reference: string };
+  assert.equal(row.reference, "user");
+});
+
+test("saveTerm overwrites the reference on an update", () => {
+  saveTerm(db, {
+    project: "pipeline",
+    term: "Order",
+    description: "First.",
+    reference: "agent",
+  });
+  saveTerm(db, {
+    project: "pipeline",
+    term: "Order",
+    description: "Second.",
+    reference: "https://wiki/order",
+  });
+
+  assert.equal(
+    lookupTerm(db, { project: "pipeline", term: "Order" }).reference,
+    "https://wiki/order",
+  );
+});
+
+test("touchTerm keeps the reference", () => {
+  saveTerm(db, {
+    project: "pipeline",
+    term: "Order",
+    description: "A production order.",
+    reference: "user",
+  });
+
+  const result = touchTerm(db, { project: "pipeline", term: "Order" });
+
+  assert.equal(result.reference, "user");
+});
+
 test("saveTerm rejects an empty description", () => {
   assert.throws(
     () => saveTerm(db, { project: "pipeline", term: "Order", description: "  " }),

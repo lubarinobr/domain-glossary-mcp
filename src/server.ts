@@ -11,6 +11,11 @@ const TERM_DESCRIPTION =
   "Name of the domain term. Use aggregate roots and entities, for example Order or Shipment. " +
   "Do not use DTOs, requests, responses, mappers or internal value objects.";
 
+const REFERENCE_DESCRIPTION =
+  "Optional source of the description, so a later reader can trace where it came from. " +
+  "Use a URL for a document, \"user\" when a person gave the definition, or \"agent\" " +
+  "when you wrote it from the code. Leave it out when the source is unknown.";
+
 /**
  * Builds the MCP server with the 3 glossary tools.
  *
@@ -48,6 +53,7 @@ export function createServer(db: DatabaseSync): McpServer {
         const text =
           result.status === "documented"
             ? `${result.term}: ${result.description}` +
+              (result.reference ? `\nSource: ${result.reference}.` : "") +
               (result.updatedAt
                 ? `\n(last updated ${result.updatedAt} UTC. ` +
                   `If this looks outdated, ask the dev to confirm the definition, ` +
@@ -72,14 +78,17 @@ export function createServer(db: DatabaseSync): McpServer {
         description: z
           .string()
           .describe("Business definition of the term, 2 to 3 lines."),
+        reference: z.string().optional().describe(REFERENCE_DESCRIPTION),
       },
       annotations: { readOnlyHint: false, idempotentHint: true },
     },
-    async ({ project, term, description }) =>
+    async ({ project, term, description, reference }) =>
       guard(() => {
-        const result = saveTerm(db, { project, term, description });
+        const result = saveTerm(db, { project, term, description, reference });
         return {
-          text: `${result.term} in ${result.project} was ${result.status}.`,
+          text:
+            `${result.term} in ${result.project} was ${result.status}.` +
+            (result.reference ? ` Source: ${result.reference}.` : ""),
           data: result,
         };
       }),

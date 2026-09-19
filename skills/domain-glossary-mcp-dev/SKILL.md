@@ -14,9 +14,9 @@ and use the server, read the `domain-glossary-mcp` skill instead.
 src/
   index.ts       bin entry, stdio transport, SIGINT and SIGTERM
   server.ts      McpServer and the 4 tool registrations
-  db.ts          path resolution, connection, WAL, schema
+  db.ts          path resolution, connection, WAL, schema, migrations
   glossary.ts    lookupTerm, saveTerm, touchTerm, listMissingTerms
-  validation.ts  trim and the rejected suffixes
+  validation.ts  trim, the rejected suffixes, the optional reference
   logger.ts      JSON lines on stderr
 test/            one file per module, plus smoke.test.ts
 ```
@@ -74,6 +74,12 @@ These cost time if you meet them without warning.
   behaviour, not a side effect to clean up. Any change here changes the feature.
 - **Dependencies stay pinned to exact versions**, and the runtime stays free of
   native addons. `node:sqlite` is built in, so `npm install` never compiles.
+- **A new column needs a migration, not only a schema change.**
+  `CREATE TABLE IF NOT EXISTS` never alters a table that already exists, so an
+  older database keeps its old columns. The `migrate` function in `db.ts` reads
+  `PRAGMA table_info` and runs `ALTER TABLE ... ADD COLUMN` for a missing
+  column. Add a new column there, and keep it nullable, because an old row has
+  no value for it.
 
 ## Add a tool
 

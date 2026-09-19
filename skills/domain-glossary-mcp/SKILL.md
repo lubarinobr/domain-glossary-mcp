@@ -9,8 +9,9 @@ description: How to connect and use the domain-glossary MCP server, which serves
 this domain term mean in this project? The answer is 2 or 3 lines, so the agent
 never loads a javadoc or a README into the context window.
 
-The data lives in a SQLite file. Each row has a project, a term and a
-description.
+The data lives in a SQLite file. Each row has a project, a term, a
+description, an optional reference to the source and the time of the last
+update.
 
 Repository: <https://github.com/lubarinobr/domain-glossary-mcp>
 
@@ -161,12 +162,23 @@ sits inside a repository.
 | Tool | Input | Result |
 |---|---|---|
 | `lookup_term` | `project`, `term` | the definition and the time of the last update, or the term marked undocumented and the gap recorded |
-| `save_term` | `project`, `term`, `description` | creates or replaces the definition and sets the update time to now |
+| `save_term` | `project`, `term`, `description`, `reference` (optional) | creates or replaces the definition, records the source and sets the update time to now |
 | `refresh_term` | `project`, `term` | moves the update time to now, keeps the text |
 | `list_missing_terms` | `project` (optional) | the terms that have no definition |
 
 `project` is the name of the repository, for example
 `production-data-pipeline`. `term` is the name of the class.
+
+`reference` is optional. It records the source of the description, so a later
+reader can trace where the definition came from. Use one of these forms:
+
+- A URL, when the definition comes from a document or a wiki page.
+- `user`, when a person gave the definition.
+- `agent`, when you wrote the definition from the code.
+
+Leave `reference` out when the source is unknown. `lookup_term` reports the
+source on a later read, for example `Source: https://wiki/order.`. The field
+does not change what counts as a domain term; it only records the origin.
 
 ## How to use the tools
 
@@ -209,8 +221,10 @@ at a time.
    - Use approved, common words. Describe the business meaning, not the fields.
 6. Show the draft description to the dev. Ask the dev to confirm the text.
 7. Read the answer:
-   - If the dev confirms, call `save_term` with the project, the term and the
-     confirmed description.
+   - If the dev confirms, call `save_term` with the project, the term, the
+     confirmed description and the `reference`. Set `reference` to the source
+     of the text: a URL for a document, `user` when the dev gave the text, or
+     `agent` when you wrote it from the code.
    - If the dev asks for a change, edit the draft and go back to step 6.
 
 Do not call `save_term` before the dev confirms the text. The write goes to a
@@ -245,10 +259,12 @@ description); use `save_term` for a gap instead.
 - The comparison of `project` and `term` ignores letter case. `Order` and
   `order` reach the same row. The server returns the stored spelling.
 - The same term in 2 projects gives 2 independent rows.
-- `save_term` is an upsert. A second call replaces the text and moves
-  `updated_at` forward.
-- `refresh_term` moves `updated_at` forward and keeps the text. It fails on a
-  term that has no entry, and on a gap that has no definition yet.
+- `save_term` is an upsert. A second call replaces the text and the
+  `reference`, and moves `updated_at` forward. An absent `reference` stores a
+  NULL.
+- `refresh_term` moves `updated_at` forward and keeps the text and the
+  `reference`. It fails on a term that has no entry, and on a gap that has no
+  definition yet.
 - Every field is trimmed before use.
 - A validation failure comes back as a tool error with a readable message, not
   as a protocol error. Read the message and correct the input.
@@ -271,7 +287,7 @@ JSON lines on stderr.
 ## Inspect the database directly
 
 ```bash
-sqlite3 /absolute/path/to/glossary.db "SELECT project, term, description FROM glossary;"
+sqlite3 /absolute/path/to/glossary.db "SELECT project, term, description, reference FROM glossary;"
 sqlite3 /absolute/path/to/glossary.db "SELECT project, term FROM glossary WHERE description IS NULL;"
 ```
 

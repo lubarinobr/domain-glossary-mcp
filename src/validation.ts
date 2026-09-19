@@ -50,6 +50,21 @@ export function validateDescription(value: unknown): string {
   return description;
 }
 
+/**
+ * Validates the optional reference, the source of a description.
+ *
+ * The value names where the definition came from, for example a URL, "user"
+ * or "agent". The field is optional. An absent value, or a value that holds
+ * only whitespace, becomes null.
+ */
+export function validateReference(value: unknown): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  const reference = asTrimmedString(value);
+  return reference.length === 0 ? null : reference;
+}
+
 function asTrimmedString(value: unknown): string {
   if (typeof value !== "string") {
     return "";
