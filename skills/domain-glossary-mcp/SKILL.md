@@ -178,12 +178,42 @@ or `Invoice`. The server rejects names that end with `DTO`, `Request`,
 transport objects.
 
 When `lookup_term` reports an undocumented term, do not invent a definition.
-Read the code, confirm the meaning, then call `save_term`. If the meaning stays
-unclear, leave the NULL in place. The gap is more useful than a wrong
-definition.
+Follow the steps in "When the term is not found" below. Ask the dev first, and
+get a confirmation before you call `save_term`. If the meaning stays unclear,
+leave the NULL in place. The gap is more useful than a wrong definition.
 
 Keep every description to 2 or 3 lines. Describe the business meaning, not the
 fields or the class hierarchy.
+
+## When the term is not found
+
+Follow these steps when `lookup_term` reports an undocumented term. Do one step
+at a time.
+
+1. Tell the dev that the glossary has no definition for the term.
+2. Ask the dev if you must add the term now.
+3. Read the answer:
+   - If the answer agrees (for example "yes", "sure", "go ahead", "please do"),
+     go to step 4.
+   - If the answer refuses, stop. Keep the NULL in place. The gap stays useful.
+4. Get the description:
+   - If you know the business meaning from the code or the context, write a
+     draft of 2 or 3 lines.
+   - If the meaning is not clear, ask the dev for the description. Do not
+     invent a definition.
+5. Write the description in Simplified Technical English (ASD-STE100):
+   - Use short sentences. Keep each sentence to 20 words or less.
+   - Use active voice and simple verb tenses.
+   - Use one idea per sentence.
+   - Use approved, common words. Describe the business meaning, not the fields.
+6. Show the draft description to the dev. Ask the dev to confirm the text.
+7. Read the answer:
+   - If the dev confirms, call `save_term` with the project, the term and the
+     confirmed description.
+   - If the dev asks for a change, edit the draft and go back to step 6.
+
+Do not call `save_term` before the dev confirms the text. The write goes to a
+shared glossary, so it needs one clear confirmation.
 
 ## Behaviour to expect
 
