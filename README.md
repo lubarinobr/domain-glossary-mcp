@@ -117,6 +117,16 @@ objects.
 
 Logs are JSON lines on stderr. The stdout stream belongs to the MCP transport.
 
+## Agent skills
+
+The `skills/` folder holds 2 skills for coding agents:
+
+- `domain-glossary-mcp` explains how to connect the server and use the tools
+- `domain-glossary-mcp-dev` explains the conventions of this codebase
+
+Copy the folder you need into `<repo>/.kiro/skills/` or `~/.kiro/skills/`. See
+`skills/README.md`.
+
 ## Development
 
 ```bash
