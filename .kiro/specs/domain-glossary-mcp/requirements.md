@@ -1,42 +1,46 @@
 # Requirements - Domain Glossary MCP
 
-## Problema
+## Problem
 
-O coding agent precisa da definicao de negocio de um termo de dominio (Order, Shipment)
-sem carregar javadoc ou README inteiros no context window. A resposta deve ter 2-3 linhas
-e chegar sob demanda.
+The coding agent needs the business definition of a domain term, for example
+Order or Shipment, without loading a javadoc or a README into the context
+window. The answer must hold 2 or 3 lines and arrive on demand.
 
-## Requisitos funcionais
+## Functional requirements
 
-1. O sistema expoe um servidor MCP sobre transporte stdio.
-2. O sistema distribui-se por `npm install` e expoe um binario executavel.
-3. O sistema guarda os dados em SQLite, num unico ficheiro central compartilhado
-   entre projetos.
-4. O tool `lookup_term` recebe `project` e `term` e devolve a `description`.
-5. Quando o termo nao existe, `lookup_term` cria a entry com `description = NULL`
-   e devolve "undocumented". A lacuna fica registada.
-6. O tool `save_term` recebe `project`, `term` e `description` e faz upsert.
-7. O tool `list_missing_terms` lista as entries com `description IS NULL`.
-   O filtro por `project` e opcional.
-8. A comparacao de `project` e `term` e case-insensitive. O sistema guarda a
-   grafia original.
-9. O sistema rejeita input vazio ou so com whitespace.
-10. O sistema rejeita termos com sufixos que nao sao termos de dominio:
+1. The system exposes an MCP server over the stdio transport.
+2. The system installs through `npm install` and exposes an executable binary.
+3. The system stores the data in SQLite, in one file that several projects
+   share.
+4. The tool `lookup_term` takes `project` and `term` and returns the
+   `description`.
+5. When the term is absent, `lookup_term` creates the entry with
+   `description = NULL` and reports the term as undocumented. The gap stays
+   recorded.
+6. The tool `save_term` takes `project`, `term` and `description` and performs
+   an upsert.
+7. The tool `list_missing_terms` lists the entries with `description IS NULL`.
+   The `project` filter is optional.
+8. The comparison of `project` and `term` ignores letter case. The system keeps
+   the original spelling.
+9. The system rejects input that is empty or that holds only whitespace.
+10. The system rejects terms with suffixes that fall outside the domain model:
     `DTO`, `Request`, `Response`, `Mapper`, `Config`.
 
-## Requisitos nao funcionais
+## Non-functional requirements
 
-1. Zero dependencias nativas. O `npm install` nunca compila codigo C++.
-2. Logs estruturados em stderr. O stdout pertence ao transporte MCP.
-3. Node >= 22.13, porque `node:sqlite` precisa dessa versao para correr sem flag.
-4. Dependencias fixadas em versao exata.
+1. No native dependencies. `npm install` never compiles C++ code.
+2. Structured logs on stderr. The stdout stream belongs to the MCP transport.
+3. Node 22.13 or later, because `node:sqlite` needs that version to run without
+   a flag.
+4. Dependencies pinned to exact versions.
 
-## Fora de escopo
+## Out of scope
 
-Estes pontos ficam fora por decisao explicita:
+These points stay out by explicit decision:
 
-- Allowlist de entities num ficheiro `entities.json`
-- Gate de CI para entries NULL
-- Versionamento do ficheiro `.db` no git
-- Fonte de verdade em ficheiros texto com build do DB
-- Fase de seed manual de aggregate roots
+- An allowlist of entities in an `entities.json` file
+- A CI gate for NULL entries
+- Version control of the `.db` file in git
+- A text file as the source of truth, with a build step for the database
+- A manual seed phase for the known aggregate roots

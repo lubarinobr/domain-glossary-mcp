@@ -1,80 +1,82 @@
 # Design - Domain Glossary MCP
 
-## Decisoes tecnicas
+## Technical decisions
 
-### Runtime SQLite: `node:sqlite`
+### SQLite runtime: `node:sqlite`
 
-O modulo `node:sqlite` e built-in no Node desde a 22.5. Corre sem flag desde a
-22.13 e e release candidate desde a 25.7. A alternativa, `better-sqlite3`, e um
-addon nativo e falha o install em ambientes de CI sem prebuild. Usamos
-`DatabaseSync`.
+The `node:sqlite` module is built into Node since version 22.5. It runs without
+a flag since 22.13, and it is a release candidate since 25.7. The alternative,
+`better-sqlite3`, is a native addon and fails the install in a CI environment
+without a prebuild. The server uses `DatabaseSync`.
 
-### Validacao leve em vez de allowlist
+### Light validation instead of an allowlist
 
-Uma allowlist mantida a mao desincroniza do codigo em poucas semanas. Em vez
-disso o servidor aplica regras simples:
+An allowlist kept by hand goes out of sync with the code in a few weeks. The
+server applies simple rules instead:
 
-- `trim()` em todos os campos
-- rejeita vazio ou so whitespace
-- rejeita sufixos `DTO`, `Request`, `Response`, `Mapper`, `Config`
-- normaliza para comparacao case-insensitive, mas guarda a grafia original
+- `trim()` on every field
+- reject a value that is empty or that holds only whitespace
+- reject the suffixes `DTO`, `Request`, `Response`, `Mapper`, `Config`
+- compare without regard to letter case, but keep the original spelling
 
-### Resolucao do path do DB
+### Database path resolution
 
-1. O argumento `--db <path>`, que vive no array `args` do config do cliente MCP
-2. `GLOSSARY_DB_PATH`, que vive no bloco `env` do mesmo config
-3. `env-paths('domain-glossary').data/glossary.db`, o glossario global
+1. The `--db <path>` argument, which lives in the `args` array of the MCP client
+   config
+2. `GLOSSARY_DB_PATH`, which lives in the `env` block of the same config
+3. `env-paths('domain-glossary').data/glossary.db`, the global glossary
 
-O argumento ganha da variavel. A escolha do ficheiro fica visivel ao lado do
-comando, num unico lugar do config. A variavel serve quando um script wrapper
-ou um job de CI fornece o path.
+The argument wins over the variable. The choice of file sits next to the
+command, in one place of the config. The variable serves a wrapper script or a
+CI job that supplies the path.
 
-O servidor expande um `~` inicial e torna um path relativo absoluto, porque um
-config JSON nao passa pela shell. A linha de log de arranque reporta o `dbPath`
-e o `dbPathSource` (`argument`, `environment` ou `default`).
+The server expands a leading `~` and turns a relative path into an absolute
+one, because a JSON config does not pass through a shell. The startup log line
+reports `dbPath` and `dbPathSource`, which holds `argument`, `environment` or
+`default`.
 
-Isto torna a escolha entre um glossario por repo e um glossario central uma
-decisao de config, nao de codigo.
+A per-repository glossary and a shared one are therefore a config choice, not a
+code change.
 
-O servidor cria o diretorio se nao existir e ativa WAL mode. O ficheiro nunca
-vive dentro de `node_modules`, porque o npm apaga esse conteudo em cada
-reinstalacao.
+The server creates the directory when it is absent and enables WAL mode. The
+file never lives inside `node_modules`, because npm deletes that content on
+each reinstall.
 
-Localizacoes do `env-paths`:
+`env-paths` locations:
 
-| SO | Path |
+| OS | Path |
 |---|---|
 | macOS | `~/Library/Application Support/domain-glossary-nodejs/` |
-| Linux | `$XDG_DATA_HOME/domain-glossary-nodejs/` ou `~/.local/share/domain-glossary-nodejs/` |
+| Linux | `$XDG_DATA_HOME/domain-glossary-nodejs/` or `~/.local/share/domain-glossary-nodejs/` |
 | Windows | `%LOCALAPPDATA%\domain-glossary-nodejs\Data\` |
 
 ## Schema
 
 ```sql
 CREATE TABLE IF NOT EXISTS glossary (
-  project     TEXT NOT NULL,
-  term        TEXT NOT NULL,
+  project     TEXT NOT NULL COLLATE NOCASE,
+  term        TEXT NOT NULL COLLATE NOCASE,
   description TEXT,
   updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (project, term)
 ) STRICT;
 ```
 
-A coluna `description` aceita NULL. Esse NULL marca a lacuna.
+The `description` column accepts NULL. That NULL marks the gap.
 
-Para a comparacao case-insensitive, as colunas de chave usam
-`COLLATE NOCASE`, o que faz a primary key tratar `Order` e `order` como a
-mesma entry.
+The key columns carry `COLLATE NOCASE`, so the primary key treats `Order` and
+`order` as the same entry. The rule therefore lives in the schema, and no
+second copy of it lives in code.
 
 ## Tools
 
 | Tool | Input | Output |
 |---|---|---|
-| `lookup_term` | `project`, `term` | descricao, ou "undocumented" e cria a entry NULL |
-| `save_term` | `project`, `term`, `description` | confirmacao do upsert |
-| `list_missing_terms` | `project` (opcional) | termos com `description IS NULL` |
+| `lookup_term` | `project`, `term` | the description, or "undocumented" plus a new NULL entry |
+| `save_term` | `project`, `term`, `description` | confirmation of the upsert |
+| `list_missing_terms` | `project` (optional) | the terms with `description IS NULL` |
 
-## Fluxo
+## Flow
 
 ```mermaid
 sequenceDiagram
@@ -83,10 +85,10 @@ sequenceDiagram
     participant D as SQLite
     A->>S: lookup_term(project, term)
     S->>D: SELECT description
-    alt existe com descricao
-        D-->>S: texto
-        S-->>A: definicao
-    else nao existe
+    alt the entry holds a description
+        D-->>S: text
+        S-->>A: definition
+    else the entry is absent
         S->>D: INSERT (project, term, NULL)
         S-->>A: "undocumented"
     end
@@ -95,16 +97,16 @@ sequenceDiagram
     S-->>A: ok
 ```
 
-## Estrutura de ficheiros
+## File layout
 
 ```
 src/
-  index.ts       bin entry, liga o servidor ao transporte stdio
-  server.ts      cria o McpServer e registra os 3 tools
-  db.ts          resolve o path, abre a conexao, aplica o schema
+  index.ts       bin entry, connects the server to the stdio transport
+  server.ts      creates the McpServer and registers the 3 tools
+  db.ts          resolves the path, opens the connection, applies the schema
   glossary.ts    lookupTerm, saveTerm, listMissingTerms
-  validation.ts  normalizacao e regras de rejeicao
-  logger.ts      log estruturado em stderr
+  validation.ts  normalization and the rejection rules
+  logger.ts      structured log on stderr
 test/
   db.test.ts
   glossary.test.ts
@@ -112,5 +114,10 @@ test/
   server.test.ts
 ```
 
-A camada `glossary.ts` recebe a conexao por parametro. Isso mantem os testes
-sem estado global e permite um DB temporario por teste.
+Every function in `glossary.ts` takes the connection as a parameter. That keeps
+the tests free of global state and gives each test its own temporary database.
+
+A tool never throws to the client. A validation failure returns a tool error
+with a readable message, so the agent can correct the input. A thrown error
+would reach the client as a protocol error, which carries less for the agent to
+act on.
