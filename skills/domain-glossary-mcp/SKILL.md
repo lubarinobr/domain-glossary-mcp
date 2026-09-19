@@ -156,10 +156,14 @@ Never point the path inside `node_modules`. npm deletes that content on each
 reinstall.
 
 WAL mode is active. While the server runs, the directory also holds a
-`glossary.db-wal` and a `glossary.db-shm` file next to `glossary.db`. A clean
-shutdown checkpoints the WAL and removes both side files, so only `glossary.db`
-remains. A crash or a `kill -9` may leave the side files in place; the next
-start reads the data from them, so no data is lost.
+`glossary.db-wal` and a `glossary.db-shm` file next to `glossary.db`.
+
+The server checkpoints the WAL after every write, so `glossary.db` holds each
+new row at once. A separate reader, for example a `git` commit or a teammate,
+sees the row without a wait. You do not need to disconnect the server or run
+`sqlite3 ... "PRAGMA wal_checkpoint"` by hand. A clean shutdown also empties
+the side files, so only `glossary.db` remains. A crash may leave the side files
+in place; the next start reads the data from them, so no data is lost.
 
 Do not commit any of the 3 files when the path sits inside a repository. The
 `-wal` and the `-shm` files are transient. The `.db` file is a live database,

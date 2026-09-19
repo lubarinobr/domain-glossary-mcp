@@ -13,6 +13,7 @@ import {
   describeStaleAfterDaysSource,
   DEFAULT_STALE_AFTER_DAYS,
 } from "../src/db.js";
+import { saveTerm } from "../src/glossary.js";
 
 let workDir: string;
 
@@ -155,6 +156,43 @@ test("closeDatabase checkpoints the WAL and leaves only the main file", () => {
     assert.equal(row.description, "A production order.", "the row survives the close");
   } finally {
     closeDatabase(reopened);
+  }
+});
+
+test("a save is checkpointed into the main file while the connection stays open", () => {
+  const dbPath = join(workDir, "glossary.db");
+  const writer = openDatabase(dbPath);
+
+  try {
+    saveTerm(writer, {
+      project: "pipeline",
+      term: "Order",
+      description: "A production order.",
+    });
+
+    // saveTerm already ran a PASSIVE checkpoint. A second checkpoint now finds
+    // nothing left to move: it comes back busy = 0 and checkpointed = 0, which
+    // proves the earlier write reached the main file rather than sitting only
+    // in the WAL. PRAGMA wal_checkpoint returns (busy, log, checkpointed).
+    const result = writer
+      .prepare("PRAGMA wal_checkpoint(PASSIVE)")
+      .get() as { busy: number; log: number; checkpointed: number };
+    assert.equal(result.busy, 0, "no reader blocks the checkpoint");
+    assert.equal(result.checkpointed, 0, "the save was already folded into the main file");
+
+    // A second connection, like a teammate or a git commit reading the file,
+    // sees the row without the writer closing first.
+    const reader = openDatabase(dbPath);
+    try {
+      const row = reader
+        .prepare("SELECT description FROM glossary WHERE term = ?")
+        .get("Order") as { description: string } | undefined;
+      assert.equal(row?.description, "A production order.");
+    } finally {
+      reader.close();
+    }
+  } finally {
+    closeDatabase(writer);
   }
 });
 

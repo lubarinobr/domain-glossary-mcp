@@ -187,6 +187,29 @@ export function closeDatabase(db: DatabaseSync): void {
   db.close();
 }
 
+/**
+ * Folds the write-ahead log back into the main `.db` file.
+ *
+ * The server keeps one connection open for the whole session, so without this
+ * a new row stays only in the `-wal` file until shutdown. A reader that opens
+ * the `.db` on its own (a `git` commit, a teammate) would then see stale data.
+ *
+ * The checkpoint uses TRUNCATE, not PASSIVE. A PASSIVE checkpoint gives up when
+ * the writing connection still holds a read mark on the WAL, which is always
+ * the case right after a write on this single connection, so it would move no
+ * frames. TRUNCATE forces the frames into the main file and empties the WAL. A
+ * failure is logged, never thrown, because the row is already safe in the WAL.
+ */
+export function checkpointWal(db: DatabaseSync): void {
+  try {
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  } catch (cause) {
+    logger.warn("glossary checkpoint after write failed", {
+      message: cause instanceof Error ? cause.message : String(cause),
+    });
+  }
+}
+
 /** Names the origin of the resolved path. The startup log uses it. */
 export function describeDbPathSource(
   env: Record<string, string | undefined> = process.env,

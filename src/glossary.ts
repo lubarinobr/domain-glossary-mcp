@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { logger } from "./logger.js";
-import { DEFAULT_STALE_AFTER_DAYS } from "./db.js";
+import { checkpointWal, DEFAULT_STALE_AFTER_DAYS } from "./db.js";
 import {
   validateDescription,
   validateProject,
@@ -87,6 +87,7 @@ export function lookupTerm(
       "INSERT INTO glossary (project, term, description) VALUES (?, ?, NULL)",
     ).run(project, term);
     logger.info("glossary gap registered", { project, term });
+    checkpointWal(db);
   } else {
     logger.info("glossary gap already registered", { project, term });
   }
@@ -160,6 +161,7 @@ export function saveTerm(db: DatabaseSync, input: SaveInput): SaveResult {
            reference = excluded.reference,
            updated_at = excluded.updated_at`,
   ).run(project, term, description, reference);
+  checkpointWal(db);
 
   const status = existing ? "updated" : "created";
   logger.info(`glossary entry ${status}`, { project, term });
@@ -218,6 +220,7 @@ export function touchTerm(db: DatabaseSync, input: TouchInput): TouchResult {
        RETURNING project, term, reference, updated_at`,
     )
     .get(project, term) as unknown as GlossaryRow;
+  checkpointWal(db);
 
   logger.info("glossary entry refreshed", { project, term });
 
