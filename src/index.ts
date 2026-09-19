@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
+  closeDatabase,
   describeDbPathSource,
   describeStaleAfterDaysSource,
   openDatabase,
@@ -20,7 +21,7 @@ async function main(): Promise<void> {
 
   const shutdown = (signal: string) => {
     logger.info("shutting down", { signal });
-    db.close();
+    closeDatabase(db);
     process.exit(0);
   };
   process.on("SIGINT", () => shutdown("SIGINT"));

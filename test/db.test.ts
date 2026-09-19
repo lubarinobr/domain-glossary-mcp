@@ -7,6 +7,7 @@ import envPaths from "env-paths";
 import {
   resolveDbPath,
   openDatabase,
+  closeDatabase,
   describeDbPathSource,
   resolveStaleAfterDays,
   describeStaleAfterDaysSource,
@@ -126,6 +127,34 @@ test("openDatabase enables WAL journal mode", () => {
     assert.equal(row.journal_mode, "wal");
   } finally {
     db.close();
+  }
+});
+
+test("closeDatabase checkpoints the WAL and leaves only the main file", () => {
+  const dbPath = join(workDir, "glossary.db");
+
+  const db = openDatabase(dbPath);
+  db.prepare("INSERT INTO glossary (project, term, description) VALUES (?, ?, ?)").run(
+    "pipeline",
+    "Order",
+    "A production order.",
+  );
+  assert.ok(existsSync(`${dbPath}-wal`), "the WAL exists while the server runs");
+
+  closeDatabase(db);
+
+  assert.ok(existsSync(dbPath), "the main file remains");
+  assert.equal(existsSync(`${dbPath}-wal`), false, "the WAL is gone after close");
+  assert.equal(existsSync(`${dbPath}-shm`), false, "the shm file is gone after close");
+
+  const reopened = openDatabase(dbPath);
+  try {
+    const row = reopened
+      .prepare("SELECT description FROM glossary WHERE term = ?")
+      .get("Order") as { description: string };
+    assert.equal(row.description, "A production order.", "the row survives the close");
+  } finally {
+    closeDatabase(reopened);
   }
 });
 

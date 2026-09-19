@@ -155,9 +155,26 @@ The value of `dbPathSource` is `argument`, `environment` or `default`. The
 Never point the path inside `node_modules`. npm deletes that content on each
 reinstall.
 
-WAL mode is active, so the directory also holds `glossary.db-wal` and
-`glossary.db-shm`. Add `*.db-wal` and `*.db-shm` to `.gitignore` if the path
-sits inside a repository.
+WAL mode is active. While the server runs, the directory also holds a
+`glossary.db-wal` and a `glossary.db-shm` file next to `glossary.db`. A clean
+shutdown checkpoints the WAL and removes both side files, so only `glossary.db`
+remains. A crash or a `kill -9` may leave the side files in place; the next
+start reads the data from them, so no data is lost.
+
+Do not commit any of the 3 files when the path sits inside a repository. The
+`-wal` and the `-shm` files are transient. The `.db` file is a live database,
+and a commit of it causes merge conflicts and races between writers. Add these
+lines to the `.gitignore` of the consuming repository:
+
+```gitignore
+*.db
+*.db-wal
+*.db-shm
+```
+
+The simplest way to avoid the question is to keep the database out of the
+repository. Leave `--db` unset to use the per-user data directory, or point it
+at a path outside the working tree.
 
 ## Tools
 

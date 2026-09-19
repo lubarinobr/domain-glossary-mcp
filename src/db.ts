@@ -151,6 +151,7 @@ export function openDatabase(dbPath: string = resolveDbPath()): DatabaseSync {
     db.exec("PRAGMA journal_mode = WAL");
     db.exec("PRAGMA busy_timeout = 5000");
     db.exec("PRAGMA foreign_keys = ON");
+    db.exec("PRAGMA journal_size_limit = 0");
     db.exec(SCHEMA);
     migrate(db);
   } catch (cause) {
@@ -164,6 +165,26 @@ export function openDatabase(dbPath: string = resolveDbPath()): DatabaseSync {
 
   logger.debug("glossary database ready", { dbPath });
   return db;
+}
+
+/**
+ * Closes the database after a clean checkpoint.
+ *
+ * WAL mode leaves a `-wal` and a `-shm` file next to the database. A plain
+ * close keeps them, which clutters a repository when the path sits inside one.
+ * `wal_checkpoint(TRUNCATE)` folds the WAL back into the main file and empties
+ * it, so only `glossary.db` remains after a clean shutdown. A checkpoint error
+ * never blocks the close; the data is safe in the WAL either way.
+ */
+export function closeDatabase(db: DatabaseSync): void {
+  try {
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  } catch (cause) {
+    logger.warn("glossary checkpoint on close failed", {
+      message: cause instanceof Error ? cause.message : String(cause),
+    });
+  }
+  db.close();
 }
 
 /** Names the origin of the resolved path. The startup log uses it. */

@@ -135,6 +135,29 @@ The value of `dbPathSource` is `argument`, `environment` or `default`. The
 `staleAfterDays` field reports the threshold, and `staleAfterDaysSource`
 reports its origin with the same 3 values.
 
+### WAL files and version control
+
+WAL mode is active. While the server runs, a `glossary.db-wal` and a
+`glossary.db-shm` file sit next to `glossary.db`. A clean shutdown checkpoints
+the WAL and removes both side files, so only `glossary.db` remains. A crash may
+leave the side files in place; the next start reads the data from them, so no
+data is lost.
+
+Do not commit any of the 3 files when the path sits inside a repository. The
+`-wal` and the `-shm` files are transient. The `.db` file is a live database,
+and a commit of it causes merge conflicts and races between writers. Add these
+lines to the `.gitignore` of the consuming repository:
+
+```gitignore
+*.db
+*.db-wal
+*.db-shm
+```
+
+The simplest way to avoid this is to keep the database out of the repository:
+leave `--db` unset to use the per-user data directory, or point it at a path
+outside the working tree.
+
 ## Tools
 
 | Tool | Input | Result |
